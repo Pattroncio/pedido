@@ -1,0 +1,106 @@
+import os
+import pandas as pd
+import xml.etree.ElementTree as ET
+import time
+import re
+
+# Local de armazenamento dos XMLS
+folder_path = r'C:\XML\XMLS FSIST'
+inicio = time.time()
+
+# Extração de dados do XML
+def extract_xml_nfe(file_path, data_dict):
+    try:
+        tree = ET.parse(file_path)
+        root = tree.getroot()
+        ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
+
+        # Definindo os campos que preciso extrair
+
+        nro_nf = root.find('.//nfe:ide/nfe:nNF', ns).text
+        emitente_nf = root.find('.//nfe:emit/nfe:xNome', ns).text
+        campo_info_nf = root.find('.//nfe:infAdic/nfe:infCpl', ns)
+        valor_icms_nf = root.find('.//nfe:ICMSTot/nfe:vICMS', ns).text
+        valor_st_nf = root.find('.//nfe:ICMSTot/nfe:vST', ns).text
+        valor_fcp_nf = root.find('.//nfe:ICMSTot/nfe:vFCP', ns).text
+        valor_totalprodutos_nf = root.find('.//nfe:ICMSTot/nfe:vProd', ns).text
+        valor_frete_nf = root.find('.//nfe:ICMSTot/nfe:vFrete', ns).text
+        valor_descontos_nf = root.find('.//nfe:ICMSTot/nfe:vDesc', ns).text
+        valor_ipi_nf = root.find('.//nfe:ICMSTot/nfe:vIPI', ns).text
+        valor_pis_nf = root.find('.//nfe:ICMSTot/nfe:vPIS', ns).text
+        valor_cofins_nf = root.find('.//nfe:ICMSTot/nfe:vCOFINS', ns).text
+        valor_outrasdespesas_nf = root.find('.//nfe:ICMSTot/nfe:vOutro', ns).text
+        valor_totalnota_nf = root.find('.//nfe:ICMSTot/nfe:vNF', ns).text
+        produtos_nf = root.findall('.//nfe:det', ns)
+
+        # Extraindo o número do pedido
+        if campo_info_nf is not None and campo_info_nf.text:
+            match = re.search(r' Nosso Pedido: (\d+)', campo_info_nf.text)
+            if match:
+                pedido = match.group(1)
+            else:
+                pedido = 'N/A'  # Se o padrão não for encontrado, definimos como 'N/A'
+        else:
+            pedido = 'N/A'  # Se o campo de informação adicional estiver vazio, definimos como 'N/A'
+
+        #Iteração
+        for produto in produtos_nf:
+            codigo_nf = produto.find('.//nfe:cProd', ns).text
+            quantidade_prod = produto.find('.//nfe:qCom', ns).text
+            nome_produto = produto.find('.//nfe:xProd', ns).text
+            data_emissao = root.find('.//nfe:ide/nfe:dhEmi', ns).text
+            cnpj = root.find('.//nfe:emit/nfe:CNPJ', ns).text
+            # Adicionando os valores ao dicionário de dados
+            data_dict['NFe'].append(nro_nf)
+            data_dict['Emitente'].append(emitente_nf)
+            data_dict['Pedido'].append(pedido)
+            data_dict['ICMS'].append(valor_icms_nf)
+            data_dict['ST'].append(valor_st_nf)
+            data_dict['FCP'].append(valor_fcp_nf)
+            data_dict['Total Produtos'].append(valor_totalprodutos_nf)
+            data_dict['FRETE'].append(valor_frete_nf)
+            data_dict['DESCONTOS'].append(valor_descontos_nf)
+            data_dict['IPI'].append(valor_ipi_nf)
+            data_dict['PIS'].append(valor_pis_nf)
+            data_dict['COFINS'].append(valor_cofins_nf)
+            data_dict['Outras Despesas'].append(valor_outrasdespesas_nf)
+            data_dict['Valor Total Nota Fiscal'].append(valor_totalnota_nf)
+            data_dict['Produtos da Nota'].append(nome_produto)
+            data_dict['Código Item'].append(codigo_nf)
+            data_dict['Quantidade Item'].append(quantidade_prod)
+            data_dict['Data Emissão'].append(data_emissao)
+            data_dict['CNPJ'].append(cnpj)
+
+    except Exception as e:
+        print(f"Erro ao processar o arquivo {file_path}: {e}")
+
+# Dicionário de dados para armazenar os valores extraídos do XML
+data_dict = {'NFe': [], 'Emitente': [], 'Pedido': [], 'ICMS': [], 'ST': [], 'FCP': [], 'Total Produtos': [],
+             'FRETE': [], 'DESCONTOS': [], 'IPI': [], 'PIS': [], 'COFINS': [], 'Outras Despesas': [],
+             'Valor Total Nota Fiscal': [], 'Produtos da Nota': [], 'Código Item': [], 'Quantidade Item': [],
+             'Data Emissão': [], 'CNPJ': []}
+
+# Armazenamento dos arquivos para otimização do código
+
+arquivos_processados = set()
+for filename in os.listdir(folder_path):
+    if filename.endswith('.xml'):
+        if filename not in arquivos_processados:  # Verifica se o arquivo já foi processado
+            print(f'Analisando o arquivo {filename[-8:]}')
+            file_path = os.path.join(folder_path, filename)
+            extract_xml_nfe(file_path, data_dict)
+            arquivos_processados.add(filename)  # Adiciona o nome do arquivo aos arquivos processados
+
+# Criando DataFrame a partir do dicionário de dados
+dados_nf = pd.DataFrame.from_dict(data_dict)
+print(dados_nf)
+fim = time.time()
+tempo_total = fim - inicio
+quantidade_arquivos_processados = len(data_dict['NFe'])  # Aqui você obtém a quantidade de arquivos processados
+print(f'Processo realizado em {tempo_total:.2f} segundos para {quantidade_arquivos_processados} arquivos')
+
+# Criação do arquivo em excel com o nome escolhido
+excel_file_path = os.path.join(folder_path, 'base_NFe & pedidos.xlsx')
+
+# Salvando o DataFrame como um arquivo Excel
+dados_nf.to_excel(excel_file_path, index=False)
