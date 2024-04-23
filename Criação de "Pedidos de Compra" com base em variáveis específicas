@@ -1,0 +1,54 @@
+import pandas as pd
+
+#Arquivo em Excel que será lido (caminho)
+base = pd.read_excel(r'')
+
+#Extração de dados de colunas em Excel e armazena em variáveis separadas
+dados = base['Mesclado']
+f6 = base['CÓD. FABRICANTE']
+quantidade = base['QTDE A COMPRAR']
+categoria = base['Categoria ']
+num_pedido = base['NÚMERO DO PEDIDO']
+
+#Aqui incicializamos o uso das variáveis para usar posteriormente no código 
+contador = 1
+ultima_informacao = None
+contagem_por_codigo = {}
+soma_quantidade_por_codigo = {}
+codigos_unicos = []
+
+#Essa parte é responsável por o valor de cada dado da lista anterior de variáveis de dentro da planilha em Excel
+for i, dado in enumerate(dados):
+    if dado != ultima_informacao:
+        contador += 1
+        ultima_informacao = dado
+        contagem_por_codigo[dado] = 1
+        soma_quantidade_por_codigo[dado] = quantidade[i]
+    else:
+        contagem_por_codigo[dado] += 1
+        soma_quantidade_por_codigo[dado] += quantidade[i]
+
+    if contagem_por_codigo[dado] > 30 or soma_quantidade_por_codigo[dado] > 30:
+        if contagem_por_codigo[dado] % 5 == 1 or soma_quantidade_por_codigo[dado] > 30:
+            contador += 1
+
+        contagem_por_codigo[dado] = 1
+        soma_quantidade_por_codigo[dado] = quantidade[i]
+
+    if quantidade[i] > 30:
+        contador += 1
+
+   #Montagem de Ordens de Compra com base em critérios específicos
+    ordem = 
+    ordem_aux =
+    codigo_formatado = str(contador).zfill(4)
+    codigo_final = ordem + categoria[i] + ordem_aux + codigo_formatado
+    codigos_unicos.append(codigo_final)
+
+df = pd.DataFrame({'Numero do pedido': num_pedido, 'F6': f6, 'Dado': dados,
+                   'Ordem de compra': codigos_unicos, 'QTD': quantidade})
+
+#Local em que o Excel gerado vai ser armazenado
+df.to_excel(r'')
+
+print(df)
