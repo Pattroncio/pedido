@@ -1,0 +1,138 @@
+import pandas as pd
+
+# Caminho para o arquivo Excel original
+original_file_path =
+
+# Caminho para o novo arquivo Excel
+new_file_path =
+
+# Função para normalizar os nomes das colunas removendo espaços extras e quebras de linha
+def normalize_column_names(df):
+    df.columns = df.columns.str.strip().str.replace('\n', ' ')
+    return df
+
+# Carregar as planilhas relevantes
+print("Carregando planilhas...")
+pendencias_df = normalize_column_names(pd.read_excel(original_file_path, sheet_name='PENDÊNCIAS'))
+base_kpl_df = normalize_column_names(pd.read_excel(original_file_path, sheet_name='BASE KPL'))
+base_follow_up_df = normalize_column_names(pd.read_excel(original_file_path, sheet_name='BASE FOLLOW - UP'))
+
+# Exibir nomes das colunas carregadas para verificar se estão corretos
+print("Colunas em PENDÊNCIAS:", pendencias_df.columns.tolist())
+print("Colunas em BASE KPL:", base_kpl_df.columns.tolist())
+print("Colunas em BASE FOLLOW - UP:", base_follow_up_df.columns.tolist())
+
+# Obter as listas de números de pedidos
+pendencias_pedidos = pendencias_df['NÚMERO DO PEDIDO'].tolist()
+base_kpl_pedidos = base_kpl_df['Pedido - Nº'].tolist()
+
+# Criar a nova coluna 'STATUS - CONSTA' com base na comparação
+pendencias_df['STATUS - CONSTA'] = pendencias_df['NÚMERO DO PEDIDO'].apply(
+    lambda x: 'Consta Pendência' if x in base_kpl_pedidos else 'Não Consta Pendência')
+
+# Reorganizar as colunas para colocar 'STATUS - CONSTA' logo após 'NÚMERO DO PEDIDO'
+cols = pendencias_df.columns.tolist()
+cols.insert(1, cols.pop(cols.index('STATUS - CONSTA')))
+pendencias_df = pendencias_df[cols]
+
+# Atualizar as colunas de acordo com as regras fornecidas
+for index, row in pendencias_df.iterrows():
+    tratativa_atual = row['TRATATIVA ATUAL']
+    observacoes = row['OBSERVAÇÕES']
+    ordem_de_compra = row['ORDEM DE COMPRA']
+
+    # Regras para mover observações para 'ORDEM DE COMPRA'
+    if tratativa_atual in ['ATENDER COM', 'ENVIADO DEVOLUÇÃO', 'TRATATIVA EXTERNA']:
+        pendencias_df.at[index, 'ORDEM DE COMPRA'] = observacoes
+
+    # Regras para substituir as informações da coluna 'TRATATIVA ATUAL'
+    if tratativa_atual == 'ATENDER COM':
+        pendencias_df.at[index, 'TRATATIVA ATUAL'] = 'ATENDER COM - PENDENTE ATENDIMENTO'
+    elif tratativa_atual == 'COMPRADO':
+        if pd.notna(ordem_de_compra):
+            if ordem_de_compra.startswith(('PS-MTZB', 'BT-SP')):
+                pendencias_df.at[index, 'TRATATIVA ATUAL'] = 'COMPRADO - PENDENTE LOGÍSTICA SÃO PAULO'
+            elif ordem_de_compra.startswith(('PS-ME2', 'BT-ME2')):
+                pendencias_df.at[index, 'TRATATIVA ATUAL'] = 'COMPRADO - PENDENTE LOGÍSTICA JUNDIAÍ'
+    elif tratativa_atual == 'COMPRAR PRÓXIMO PEDIDO':
+        pendencias_df.at[index, 'TRATATIVA ATUAL'] = 'COMPRAR - PENDENTE COMPRAS'
+    elif tratativa_atual == 'ITEM ZERADO // EM ANÁLISE':
+        pendencias_df.at[index, 'TRATATIVA ATUAL'] = 'ITEM ZERADO EM ANÁLISE - PENDENTE COMPRAS'
+    elif tratativa_atual == 'ENVIADO DEVOLUÇÃO':
+        pendencias_df.at[index, 'TRATATIVA ATUAL'] = 'DEVOLUÇÃO - PENDENTE ATENDIMENTO'
+    elif tratativa_atual == 'TRANSFERÊNCIA REALIZADA':
+        pendencias_df.at[index, 'TRATATIVA ATUAL'] = 'TRANSFERÊNCIA - PENDENTE FISCAL'
+    elif tratativa_atual == 'VENDA DIRETA':
+        pendencias_df.at[index, 'TRATATIVA ATUAL'] = 'VENDA DIRETA- PENDENTE FISCAL'
+    elif tratativa_atual == 'TRATATIVA EXTERNA':
+        pendencias_df.at[index, 'TRATATIVA ATUAL'] = 'PENDENTE TRATATIVA SETOR ESPECÍFICO'
+
+    # Verificar se a ordem de compra começa com "LF" e atualizar 'TRATATIVA ATUAL' se necessário
+    if isinstance(ordem_de_compra, str) and ordem_de_compra.startswith('LF'):
+        pendencias_df.at[index, 'TRATATIVA ATUAL'] = 'COMPRADO - PENDENTE DROP/CROSS'
+
+# Renomear a coluna 'ORDEM DE COMPRA' para 'AUXILIAR DE TRATATIVA ATUAL'
+pendencias_df.rename(columns={'ORDEM DE COMPRA': 'AUXILIAR DE TRATATIVA ATUAL'}, inplace=True)
+
+# Função para obter a nota fiscal correspondente
+def obter_nf(ordem_de_compra):
+    if pd.isna(ordem_de_compra) or ordem_de_compra == '':
+        return 'Sem Nota Fiscal Atrelada'
+
+    nfs = base_follow_up_df.loc[base_follow_up_df['ORDEM DE  COMPRA'] == ordem_de_compra, 'NF'].values
+    if len(nfs) > 0 and pd.notna(nfs[0]):
+        return nfs[0]
+    else:
+        return 'Sem Nota Fiscal Atrelada'
+
+# Função para obter o número do pedido correspondente
+def obter_numero_pedido(ordem_de_compra):
+    if pd.isna(ordem_de_compra) or ordem_de_compra == '':
+        return 'Pedido não encontrado'
+
+    if isinstance(ordem_de_compra, str) and ordem_de_compra.startswith('LF'):
+        return ordem_de_compra
+
+    pedidos = base_follow_up_df.loc[base_follow_up_df['ORDEM DE  COMPRA'] == ordem_de_compra, 'PEDIDO'].values
+    if len(pedidos) > 0 and pd.notna(pedidos[0]):
+        return pedidos[0]
+    else:
+        return 'Pedido não encontrado'
+
+# Criar a nova coluna 'NÚMERO DO PEDIDO (FOLLOW UP)' ao lado de 'AUXILIAR DE TRATATIVA ATUAL'
+pendencias_df['NÚMERO DO PEDIDO (FOLLOW UP)'] = pendencias_df['AUXILIAR DE TRATATIVA ATUAL'].apply(obter_numero_pedido)
+
+# Criar a nova coluna 'NF' ao lado de 'NÚMERO DO PEDIDO (FOLLOW UP)'
+pendencias_df['NF'] = pendencias_df['AUXILIAR DE TRATATIVA ATUAL'].apply(obter_nf)
+
+# Função para obter o status correspondente
+def obter_status(ordem_de_compra, status_column):
+    if pd.isna(ordem_de_compra) or ordem_de_compra == '':
+        return 'Sem Status Atrelado'
+
+    status = base_follow_up_df.loc[base_follow_up_df['ORDEM DE  COMPRA'] == ordem_de_compra, status_column].values
+    if len(status) > 0 and pd.notna(status[0]):
+        return status[0]
+    else:
+        return 'Sem Status Atrelado'
+
+# Criar as novas colunas de status
+pendencias_df['STATUS NF'] = pendencias_df['AUXILIAR DE TRATATIVA ATUAL'].apply(lambda x: obter_status(x, 'STATUS NF'))
+pendencias_df['STATUS ORDEM'] = pendencias_df['AUXILIAR DE TRATATIVA ATUAL'].apply(lambda x: obter_status(x, 'STATUS ORDEM'))
+pendencias_df['STATUS PREVISÃO'] = pendencias_df['AUXILIAR DE TRATATIVA ATUAL'].apply(lambda x: obter_status(x, 'STATUS PREVISÃO'))
+
+# Reorganizar as colunas de acordo com a nova especificação
+cols = pendencias_df.columns.tolist()
+cols.insert(cols.index('AUXILIAR DE TRATATIVA ATUAL') + 1, cols.pop(cols.index('NÚMERO DO PEDIDO (FOLLOW UP)')))
+cols.insert(cols.index('NÚMERO DO PEDIDO (FOLLOW UP)') + 1, cols.pop(cols.index('STATUS ORDEM')))
+pendencias_df = pendencias_df[cols]
+
+# Remover a coluna 'OBSERVAÇÕES' se existir
+if 'OBSERVAÇÕES' in pendencias_df.columns:
+    pendencias_df.drop(columns=['OBSERVAÇÕES'], inplace=True)
+
+# Salvar o DataFrame atualizado em um novo arquivo Excel
+with pd.ExcelWriter(new_file_path, engine='openpyxl') as writer:
+    pendencias_df.to_excel(writer, sheet_name='PENDÊNCIAS', index=False)
+
+print("Processo concluído e novo arquivo salvo como 'Realizado.xlsx'.")
